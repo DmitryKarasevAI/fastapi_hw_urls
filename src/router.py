@@ -5,6 +5,7 @@ from sqlalchemy import select, insert, delete, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_async_session
 from fastapi_cache.decorator import cache
+from fastapi_cache import FastAPICache
 from hashlib import sha256
 from datetime import datetime
 import time
@@ -127,7 +128,7 @@ async def shorten_url(
             status_code=500,
             detail="Произошла непредвиденная ошибка. Попробуйте повторить запрос позже."
         ) from e
-
+    await FastAPICache.clear()  # Очистка кэша
     return {"status": "success", "short_url": short_url}
 
 
@@ -209,7 +210,7 @@ async def delete_url(
         stmt = delete(urls).where(urls.c.short_url == short_url)
         await session.execute(stmt)
         await session.commit()
-
+        await FastAPICache.clear()  # Очистка кэша
         return {"status": "success", "message": "Ссылка удалена."}
     except Exception as e:
         await session.rollback()
@@ -287,6 +288,7 @@ async def put_url(
     try:
         await session.execute(stmt)
         await session.commit()
+        await FastAPICache.clear()  # Очистка кэша
     except Exception as e:
         await session.rollback()
         raise HTTPException(

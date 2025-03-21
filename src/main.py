@@ -32,15 +32,5 @@ app.include_router(
 app.include_router(urls_router)
 
 
-# @app.get("/protected-route")
-# def protected_route(user: User = Depends(current_active_user)):
-#     return f"Hello, {user.email}"
-
-
-# @app.get("/unprotected-route")
-# def unprotected_route():
-#     return "Hello, anonym"
-
-
 if __name__ == "__main__":
     uvicorn.run("main:app", reload=True, host="0.0.0.0", log_level="debug")
