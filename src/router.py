@@ -157,6 +157,7 @@ async def search_link(
 
 
 @router.get("/{short_url}")
+@cache(expire=60)
 async def redirect(short_url: str, session: AsyncSession = Depends(get_async_session)):
     query = select(urls).where(urls.c.short_url == short_url)
     result = await session.execute(query)
