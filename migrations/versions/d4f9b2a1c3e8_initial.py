@@ -9,7 +9,6 @@ from alembic import op
 import sqlalchemy as sa
 import sqlalchemy.dialects.postgresql as pg
 
-# revision identifiers, used by Alembic.
 revision = 'd4f9b2a1c3e8'
 down_revision = None
 branch_labels = None
@@ -17,7 +16,6 @@ depends_on = None
 
 
 def upgrade():
-    # Create the "user" table
     op.create_table(
         'user',
         sa.Column('id', pg.UUID(as_uuid=True), primary_key=True, index=True),
@@ -29,7 +27,6 @@ def upgrade():
         sa.Column('is_verified', sa.Boolean(), nullable=False, server_default=sa.text('true')),
     )
 
-    # Create the "urls" table
     op.create_table(
         'urls',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
@@ -40,7 +37,6 @@ def upgrade():
         sa.Column('expires_at', sa.DateTime(), nullable=True),
     )
 
-    # Create the "queries" table with CASCADE ondelete and onupdate for foreign keys
     op.create_table(
         'queries',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True, nullable=False),
