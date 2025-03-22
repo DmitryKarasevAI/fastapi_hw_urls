@@ -166,7 +166,7 @@ async def redirect(short_url: str, session: AsyncSession = Depends(get_async_ses
     if record is None:
         raise HTTPException(status_code=404, detail="Короткий URL не найден.")
 
-    if record.expires_at < datetime.now():
+    if record.expires_at and record.expires_at < datetime.now():
         raise HTTPException(status_code=404, detail="Ссылка больше недоступна.")
 
     try:
