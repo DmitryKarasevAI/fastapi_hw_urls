@@ -9,6 +9,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_DB: ${POSTGRES_NAME}
       PGDATA: ${POSTGRES_DATA}
+      DATABASE_URL: ${DATABASE_URL}
    ports:
       - "${POSTGRES_PORT}:${POSTGRES_PORT}"
    expose:
@@ -28,11 +29,20 @@ services:
       context: .
     container_name: fastapi_app
     command: ["/fastapi_app/docker/app.sh"]
+    env_file: .env
     ports:
       - 9999:8000
     depends_on:
       - db
       - redis
 
+  locust:
+    build:
+      context: .
+      dockerfile: Dockerfile.locust
+    ports:
+      - "8089:8089"
+    depends_on:
+      - app
 volumes:
   postgres-data:

@@ -1,0 +1,8 @@
+[run]
+concurrency = thread,greenlet
+omit =
+    */migrations/*
+    *__init__.py
+    locustfile.py
+[tool.coverage.run]
+concurrency = ["thread", "greenlet"]

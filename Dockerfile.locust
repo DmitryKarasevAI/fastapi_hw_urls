@@ -1,8 +1,6 @@
-FROM python:3.9
+FROM python:3.10-slim
 
-RUN mkdir /fastapi_app
-
-WORKDIR /fastapi_app
+WORKDIR /src
 
 COPY requirements.txt .
 
@@ -10,4 +8,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN chmod a+x docker/*.sh
+EXPOSE 8089
+
+CMD ["./docker/locust.sh"]

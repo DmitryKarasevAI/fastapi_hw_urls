@@ -1,20 +1,12 @@
 from fastapi import Depends
-from fastapi_users.db import SQLAlchemyBaseUserTableUUID, SQLAlchemyUserDatabase
+from fastapi_users.db import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import DeclarativeBase
-from database import engine, get_async_session
-
-
-class Base(DeclarativeBase):
-    pass
-
-
-class User(SQLAlchemyBaseUserTableUUID, Base):
-    pass
+from src.models import User
+from src.database import get_engine, get_async_session, Base
 
 
 async def create_db_and_tables():
-    async with engine.begin() as conn:
+    async with get_engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 

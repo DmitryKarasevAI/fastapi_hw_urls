@@ -13,10 +13,9 @@ import uuid
 import re
 from urllib.parse import urlparse
 
-from auth.users import current_active_user
-from auth.db import User
-from models import urls, queries
-from schemas import URLCreate
+from src.auth.users import current_active_user
+from src.models import Url, Query, User
+from src.schemas import URLCreate
 
 router = APIRouter(
     prefix="/links",
@@ -68,13 +67,7 @@ async def shorten_url(
                 status_code=400,
                 detail=("Неверный формат expires_at. Ожидается формат YYYY-MM-DD HH:MM.")
             )
-        try:
-            expires_at_dt = datetime.fromisoformat(new_url.expires_at)
-        except Exception as e:
-            raise HTTPException(
-                status_code=400,
-                detail="Неверное значение expires_at, не удалось преобразовать в дату."
-            ) from e
+        expires_at_dt = datetime.fromisoformat(new_url.expires_at)
 
     # Если задан кастомный alias, валидируем его формат
     if new_url.custom_alias:
@@ -87,7 +80,7 @@ async def shorten_url(
         short_url = new_url.custom_alias
 
         # Проверка наличия данного alias'a в базе данных
-        query = select(urls).where(urls.c.short_url == short_url)
+        query = select(Url).where(Url.short_url == short_url)
         result = await session.execute(query)
         if result.scalar_one_or_none():
             raise HTTPException(
@@ -96,19 +89,19 @@ async def shorten_url(
             )
     else:
         # Если кастосный alias не задан, то делаем 3 попытки посолить и захэшировать ссылку
-        for _ in range(3):
+        for i in range(3):
             salt = uuid.uuid4().hex
             salted_url = new_url.full_url + salt
             short_url = sha256(salted_url.encode('utf-8')).hexdigest()[:10]
-            query = select(urls).where(urls.c.short_url == short_url)
+            query = select(Url).where(Url.short_url == short_url)
             result = await session.execute(query)
             if not result.scalar_one_or_none():
                 break
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail="Не удалось сгенерировать уникальный короткий URL. Попробуйте повторить запрос позже."
-            )
+            if i == 2:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Не удалось сгенерировать уникальный короткий URL. Попробуйте повторить запрос позже."
+                )
 
     values = new_url.model_dump(exclude={"custom_alias", "expires_at"})
     values["short_url"] = short_url
@@ -118,7 +111,7 @@ async def shorten_url(
         values["expires_at"] = expires_at_dt
 
     # Сохраняем новый шорткат
-    statement = insert(urls).values(**values)
+    statement = insert(Url).values(**values)
     try:
         await session.execute(statement)
         await session.commit()
@@ -126,7 +119,7 @@ async def shorten_url(
         await session.rollback()
         raise HTTPException(
             status_code=500,
-            detail="Произошла непредвиденная ошибка. Попробуйте повторить запрос позже."
+            detail=f"Произошла непредвиденная ошибка. Попробуйте повторить запрос позже. {e}"
         ) from e
     await FastAPICache.clear()  # Очистка кэша
     return {"status": "success", "short_url": short_url}
@@ -138,9 +131,9 @@ async def search_link(
     full_url: str,
     session: AsyncSession = Depends(get_async_session)
 ):
-    query = select(urls).where(urls.c.full_url == full_url)
+    query = select(Url).where(Url.full_url == full_url)
     result = await session.execute(query)
-    records = result.all()  # Было сделано так, что одна ссылка может иметь множество alias'ов, поэтому выводится список всех
+    records = result.scalars().all()  # Было сделано так, что одна ссылка может иметь множество alias'ов, поэтому выводится список всех
 
     if not records:
         raise HTTPException(status_code=404, detail="Ссылка не найдена.")
@@ -159,9 +152,9 @@ async def search_link(
 @router.get("/{short_url}")
 @cache(expire=60)
 async def redirect(short_url: str, session: AsyncSession = Depends(get_async_session)):
-    query = select(urls).where(urls.c.short_url == short_url)
+    query = select(Url).where(Url.short_url == short_url)
     result = await session.execute(query)
-    record = result.one_or_none()
+    record = result.scalar_one_or_none()
 
     if record is None:
         raise HTTPException(status_code=404, detail="Короткий URL не найден.")
@@ -170,7 +163,7 @@ async def redirect(short_url: str, session: AsyncSession = Depends(get_async_ses
         raise HTTPException(status_code=404, detail="Ссылка больше недоступна.")
 
     try:
-        insert_query = insert(queries).values(
+        insert_query = insert(Query).values(
             url_id=record.id,
             full_url=record.full_url,
             short_url=record.short_url,
@@ -184,7 +177,7 @@ async def redirect(short_url: str, session: AsyncSession = Depends(get_async_ses
         await session.rollback()
         raise HTTPException(
             status_code=500,
-            detail="Произошла непредвиденная ошибка. Попробуйте повторить запрос позже."
+            detail="Произошла непредвиденная ошибка. Попробуйте повторить запрос позже. {e}"
         ) from e
 
 
@@ -194,9 +187,9 @@ async def delete_url(
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(current_active_user)  # Обязательная авторизация
 ):
-    query = select(urls).where(urls.c.short_url == short_url)
+    query = select(Url).where(Url.short_url == short_url)
     result = await session.execute(query)
-    record = result.one_or_none()
+    record = result.scalar_one_or_none()
 
     if current_user is None:
         raise HTTPException(status_code=403, detail="Чтобы получить доступ, надо залогиниться.")
@@ -208,7 +201,7 @@ async def delete_url(
         raise HTTPException(status_code=403, detail="Нет прав.")
 
     try:
-        stmt = delete(urls).where(urls.c.short_url == short_url)
+        stmt = delete(Url).where(Url.short_url == short_url)
         await session.execute(stmt)
         await session.commit()
         await FastAPICache.clear()  # Очистка кэша
@@ -217,7 +210,7 @@ async def delete_url(
         await session.rollback()
         raise HTTPException(
             status_code=500,
-            detail="Произошла непредвиденная ошибка. Попробуйте повторить запрос позже."
+            detail="Произошла непредвиденная ошибка. Попробуйте повторить запрос позже. {e}"
         ) from e
 
 
@@ -229,9 +222,9 @@ async def put_url(
     current_user: User = Depends(current_active_user)  # Обязательная авторизация
 ):
     # Получаем запись из базы по текущему короткому URL
-    query = select(urls).where(urls.c.short_url == short_url)
+    query = select(Url).where(Url.short_url == short_url)
     result = await session.execute(query)
-    record = result.one_or_none()
+    record = result.scalar_one_or_none()
 
     if current_user is None:
         raise HTTPException(status_code=403, detail="Чтобы получить доступ, надо залогиниться.")
@@ -251,7 +244,7 @@ async def put_url(
             )
 
         # Проверка наличия данного alias'a в базе данных
-        query = select(urls).where(urls.c.short_url == new_alias)
+        query = select(Url).where(Url.short_url == new_alias)
         result = await session.execute(query)
         if result.scalar_one_or_none():
             raise HTTPException(
@@ -260,21 +253,21 @@ async def put_url(
             )
     else:
         # Если кастосный alias не задан, то делаем 3 попытки посолить и захэшировать ссылку
-        for _ in range(3):
+        for i in range(3):
             salt = uuid.uuid4().hex
             new_alias = sha256(salt.encode('utf-8')).hexdigest()[:10]
-            query = select(urls).where(urls.c.short_url == new_alias)
+            query = select(Url).where(Url.short_url == new_alias)
             result = await session.execute(query)
             if not result.scalar_one_or_none():
                 break
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail="Не удалось сгенерировать уникальный короткий URL. Попробуйте повторить запрос позже."
-            )
+            if i == 2:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Не удалось сгенерировать уникальный короткий URL. Попробуйте повторить запрос позже."
+                )
 
     # Проверяем, не существует ли уже другой записи с таким новым коротким URL
-    query = select(urls).where(urls.c.short_url == new_alias, urls.c.id != record.id)
+    query = select(Url).where(Url.short_url == new_alias, Url.id != record.id)
     result = await session.execute(query)
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Указанный alias уже существует.")
@@ -285,7 +278,7 @@ async def put_url(
     update_data["creation_time"] = datetime.now()
 
     # Выполняем обновление записи в базе данных
-    stmt = update(urls).where(urls.c.id == record.id).values(**update_data)
+    stmt = update(Url).where(Url.id == record.id).values(**update_data)
     try:
         await session.execute(stmt)
         await session.commit()
@@ -306,17 +299,17 @@ async def get_expired_links_stats(
     session: AsyncSession = Depends(get_async_session)
 ):
     # Получаем все просроченные ссылки
-    query = select(urls).where(urls.c.expires_at < datetime.now())
+    query = select(Url).where(Url.expires_at < datetime.now())
     result = await session.execute(query)
-    expired_links = result.all()
+    expired_links = result.scalars().all()
 
     stats_list = []
     try:
         for link in expired_links:
             stats_query = select(
-                func.count(queries.c.id).label("access_count"),
-                func.max(queries.c.access_time).label("last_access")
-            ).where(queries.c.url_id == link.id)
+                func.count(Query.id).label("access_count"),
+                func.max(Query.access_time).label("last_access")
+            ).where(Query.url_id == link.id)
             stats_result = await session.execute(stats_query)
             stats = stats_result.one()
 
@@ -342,18 +335,18 @@ async def get_link_stats(
     short_url: str,
     session: AsyncSession = Depends(get_async_session)
 ):
-    query = select(urls).where(urls.c.short_url == short_url)
+    query = select(Url).where(Url.short_url == short_url)
     result = await session.execute(query)
-    record = result.one_or_none()
+    record = result.scalar_one_or_none()
 
     if record is None:
         raise HTTPException(status_code=404, detail="Короткий URL не найден.")
 
     try:
         query = select(
-            func.count(queries.c.id).label("access_count"),
-            func.max(queries.c.access_time).label("last_access")
-        ).where(queries.c.url_id == record.id)
+            func.count(Query.id).label("access_count"),
+            func.max(Query.access_time).label("last_access")
+        ).where(Query.url_id == record.id)
         result = await session.execute(query)
         stats = result.one()
 

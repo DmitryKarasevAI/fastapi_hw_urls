@@ -14,3 +14,11 @@ celery~=5.4.0
 flower
 pydantic~=2.10.6
 starlette~=0.45.3
+pytest
+locust
+pyqt5<5.13
+pyqtwebengine<5.13
+pytest-asyncio
+aiosqlite==0.21.0
+pytest-cov
+pytest-mock==3.14.0

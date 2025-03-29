@@ -2,7 +2,7 @@
 # wait-for-it.sh
 
 
-TIMEOUT=15
+TIMEOUT=5
 QUIET=0
 
 echoerr() {
@@ -56,4 +56,6 @@ done
 
 if [ "$#" -gt 0 ]; then
     exec "$@"
+else
+    exit 0
 fi
